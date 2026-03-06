@@ -12,16 +12,19 @@ class TextDataset(Dataset):
         return len(self.texts)
 
     def __getitem__(self, idx):
+
         encoding = self.tokenizer(
             self.texts[idx],
             truncation=True,
             max_length=self.max_length,
-            padding=False,  # IMPORTANT: no padding here
+            padding=False,  # dynamic padding later
             return_tensors="pt"
         )
 
         return {
             "input_ids": encoding["input_ids"].squeeze(0),
             "attention_mask": encoding["attention_mask"].squeeze(0),
-            "labels": torch.tensor(self.labels[idx], dtype=torch.long)
+
+            # multi-label → float
+            "labels": torch.tensor(self.labels[idx], dtype=torch.float)
         }
