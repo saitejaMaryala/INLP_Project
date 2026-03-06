@@ -1,6 +1,11 @@
+torch
 transformers
 datasets
 fairlearn
 pandas
+numpy
+scikit-learn
 kaggle
 kagglehub
+tqdm
+matplotlib
