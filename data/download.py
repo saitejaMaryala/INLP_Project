@@ -1,12 +1,17 @@
 import os
 import zipfile
-import shutil
 
 import kagglehub
 from datasets import load_dataset
 
 
-os.makedirs("data/jigsaw_data", exist_ok=True)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+JIGSAW_DIR = os.path.join(BASE_DIR, "jigsaw_data")
+BIOS_DIR = os.path.join(BASE_DIR, "bias_in_bios")
+
+os.makedirs(JIGSAW_DIR, exist_ok=True)
+
 
 # -------------------------
 # Download Jigsaw dataset
@@ -20,9 +25,9 @@ path = kagglehub.competition_download(
 zip_path = os.path.join(path, "train.csv.zip")
 
 with zipfile.ZipFile(zip_path, "r") as z:
-    z.extractall("data/jigsaw_data")
+    z.extractall(JIGSAW_DIR)
 
-print("Jigsaw dataset ready at data/jigsaw_data/train.csv")
+print("Jigsaw dataset ready at", os.path.join(JIGSAW_DIR, "train.csv"))
 
 
 # -------------------------
@@ -32,6 +37,6 @@ print("Downloading Bias in Bios dataset...")
 
 dataset = load_dataset("LabHC/bias_in_bios")
 
-dataset.save_to_disk("data/bias_in_bios")
+dataset.save_to_disk(BIOS_DIR)
 
-print("Bias in Bios saved to data/bias_in_bios")
+print("Bias in Bios saved to", BIOS_DIR)
