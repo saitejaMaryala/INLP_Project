@@ -13,21 +13,21 @@ BIOS_DIR = os.path.join(BASE_DIR, "bias_in_bios")
 os.makedirs(JIGSAW_DIR, exist_ok=True)
 
 
-# -------------------------
-# Download Jigsaw dataset
-# -------------------------
-print("Downloading Jigsaw dataset...")
+# # -------------------------
+# # Download Jigsaw dataset
+# # -------------------------
+# print("Downloading Jigsaw dataset...")
 
-path = kagglehub.competition_download(
-    "jigsaw-toxic-comment-classification-challenge"
-)
+# path = kagglehub.competition_download(
+#     "jigsaw-toxic-comment-classification-challenge"
+# )
 
-zip_path = os.path.join(path, "train.csv.zip")
+# zip_path = os.path.join(path, "train.csv.zip")
 
-with zipfile.ZipFile(zip_path, "r") as z:
-    z.extractall(JIGSAW_DIR)
+# with zipfile.ZipFile(zip_path, "r") as z:
+#     z.extractall(JIGSAW_DIR)
 
-print("Jigsaw dataset ready at", os.path.join(JIGSAW_DIR, "train.csv"))
+# print("Jigsaw dataset ready at", os.path.join(JIGSAW_DIR, "train.csv"))
 
 
 # -------------------------

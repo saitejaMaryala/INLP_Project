@@ -5,7 +5,9 @@ fairlearn
 pandas
 numpy
 scikit-learn
+scipy
 kaggle
 kagglehub
 tqdm
 matplotlib
+seaborn
