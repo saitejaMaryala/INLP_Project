@@ -1,0 +1,246 @@
+{
+  "fp32": {
+    "tag": "FP32",
+    "accuracy": 0.54,
+    "macro_f1": 0.24807,
+    "mean_eod": -0.09782,
+    "max_abs_eod": 1.0,
+    "per_class_eod": [
+      -1.0,
+      -0.33333,
+      0.44444,
+      0.0,
+      0.0,
+      1.0,
+      0.5,
+      0.0,
+      -1.0,
+      -0.75,
+      0.71429,
+      -0.21429,
+      -1.0,
+      -0.02412,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "fp16": {
+    "tag": "FP16",
+    "accuracy": 0.54,
+    "macro_f1": 0.24807,
+    "mean_eod": -0.09782,
+    "max_abs_eod": 1.0,
+    "per_class_eod": [
+      -1.0,
+      -0.33333,
+      0.44444,
+      0.0,
+      0.0,
+      1.0,
+      0.5,
+      0.0,
+      -1.0,
+      -0.75,
+      0.71429,
+      -0.21429,
+      -1.0,
+      -0.02412,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "int8": {
+    "tag": "INT8",
+    "accuracy": 0.31,
+    "macro_f1": 0.14898,
+    "mean_eod": -0.07102,
+    "max_abs_eod": 1.0,
+    "per_class_eod": [
+      -1.0,
+      0.0,
+      0.22222,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      -0.46667,
+      0.0,
+      -0.75,
+      0.42857,
+      -0.28571,
+      -1.0,
+      -0.35573,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "cka_fp16": {
+    "label": "FP32_vs_FP16",
+    "layers": [
+      {
+        "layer": 0,
+        "l2_distance": 0.00536,
+        "cosine_similarity": 1.0,
+        "cka": 0.0
+      },
+      {
+        "layer": 1,
+        "l2_distance": 0.005437,
+        "cosine_similarity": 1.0,
+        "cka": 0.999998
+      },
+      {
+        "layer": 2,
+        "l2_distance": 0.006597,
+        "cosine_similarity": 1.0,
+        "cka": 0.999997
+      },
+      {
+        "layer": 3,
+        "l2_distance": 0.00811,
+        "cosine_similarity": 1.0,
+        "cka": 0.999991
+      },
+      {
+        "layer": 4,
+        "l2_distance": 0.011504,
+        "cosine_similarity": 1.0,
+        "cka": 0.999994
+      },
+      {
+        "layer": 5,
+        "l2_distance": 0.012889,
+        "cosine_similarity": 1.0,
+        "cka": 0.999997
+      },
+      {
+        "layer": 6,
+        "l2_distance": 0.015103,
+        "cosine_similarity": 1.0,
+        "cka": 0.999998
+      },
+      {
+        "layer": 7,
+        "l2_distance": 0.016786,
+        "cosine_similarity": 1.0,
+        "cka": 0.999999
+      },
+      {
+        "layer": 8,
+        "l2_distance": 0.016738,
+        "cosine_similarity": 1.0,
+        "cka": 0.999998
+      },
+      {
+        "layer": 9,
+        "l2_distance": 0.018101,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999997
+      },
+      {
+        "layer": 10,
+        "l2_distance": 0.021346,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999998
+      },
+      {
+        "layer": 11,
+        "l2_distance": 0.018261,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999999
+      },
+      {
+        "layer": 12,
+        "l2_distance": 0.01738,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999999
+      }
+    ]
+  },
+  "cka_int8": {
+    "label": "FP32_vs_INT8",
+    "layers": [
+      {
+        "layer": 0,
+        "l2_distance": 1e-06,
+        "cosine_similarity": 1.0,
+        "cka": 1.0
+      },
+      {
+        "layer": 1,
+        "l2_distance": 0.717465,
+        "cosine_similarity": 0.998427,
+        "cka": 0.977112
+      },
+      {
+        "layer": 2,
+        "l2_distance": 1.095179,
+        "cosine_similarity": 0.996609,
+        "cka": 0.959976
+      },
+      {
+        "layer": 3,
+        "l2_distance": 2.488402,
+        "cosine_similarity": 0.983393,
+        "cka": 0.917834
+      },
+      {
+        "layer": 4,
+        "l2_distance": 3.838974,
+        "cosine_similarity": 0.976701,
+        "cka": 0.926412
+      },
+      {
+        "layer": 5,
+        "l2_distance": 4.063021,
+        "cosine_similarity": 0.977219,
+        "cka": 0.909221
+      },
+      {
+        "layer": 6,
+        "l2_distance": 4.857942,
+        "cosine_similarity": 0.971335,
+        "cka": 0.862675
+      },
+      {
+        "layer": 7,
+        "l2_distance": 5.355961,
+        "cosine_similarity": 0.962246,
+        "cka": 0.868771
+      },
+      {
+        "layer": 8,
+        "l2_distance": 4.833731,
+        "cosine_similarity": 0.962747,
+        "cka": 0.846625
+      },
+      {
+        "layer": 9,
+        "l2_distance": 5.128815,
+        "cosine_similarity": 0.945848,
+        "cka": 0.882357
+      },
+      {
+        "layer": 10,
+        "l2_distance": 6.870758,
+        "cosine_similarity": 0.925193,
+        "cka": 0.890958
+      },
+      {
+        "layer": 11,
+        "l2_distance": 8.122427,
+        "cosine_similarity": 0.874597,
+        "cka": 0.879904
+      },
+      {
+        "layer": 12,
+        "l2_distance": 7.614319,
+        "cosine_similarity": 0.863108,
+        "cka": 0.839439
+      }
+    ]
+  }
+}
