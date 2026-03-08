@@ -1,0 +1,279 @@
+{
+  "fp32": {
+    "tag": "FP32",
+    "accuracy": 0.74699,
+    "macro_f1": 0.6814,
+    "mean_eod": -0.00824,
+    "max_abs_eod": 0.50654,
+    "per_class_eod": [
+      0.0398,
+      0.02235,
+      0.1745,
+      0.25867,
+      0.13979,
+      -0.01218,
+      0.01733,
+      -0.28069,
+      0.15171,
+      -0.00027,
+      -0.21862,
+      0.00146,
+      -0.50654,
+      -0.2299,
+      -0.00273,
+      -0.27602,
+      0.14857,
+      0.04247,
+      0.09165,
+      -0.04482,
+      -0.03795,
+      -0.00665,
+      0.03445,
+      0.09649,
+      0.06395,
+      0.30974,
+      -0.17036,
+      -0.03704
+    ]
+  },
+  "fp16": {
+    "tag": "FP16",
+    "accuracy": 0.74695,
+    "macro_f1": 0.6813,
+    "mean_eod": -0.00828,
+    "max_abs_eod": 0.50654,
+    "per_class_eod": [
+      0.0398,
+      0.02183,
+      0.1747,
+      0.25867,
+      0.13979,
+      -0.01218,
+      0.01733,
+      -0.28069,
+      0.15171,
+      -0.00027,
+      -0.21862,
+      0.00186,
+      -0.50654,
+      -0.2299,
+      -0.00273,
+      -0.27602,
+      0.14857,
+      0.04247,
+      0.09139,
+      -0.04443,
+      -0.03795,
+      -0.00656,
+      0.03468,
+      0.09649,
+      0.06395,
+      0.3094,
+      -0.1716,
+      -0.03704
+    ]
+  },
+  "int8": {
+    "tag": "INT8",
+    "accuracy": 0.58328,
+    "macro_f1": 0.51513,
+    "mean_eod": 0.04849,
+    "max_abs_eod": 0.36572,
+    "per_class_eod": [
+      0.11463,
+      0.18452,
+      0.13497,
+      0.09942,
+      0.22917,
+      0.00661,
+      0.18178,
+      -0.0508,
+      0.16419,
+      0.06005,
+      -0.20181,
+      0.07273,
+      -0.32571,
+      -0.23398,
+      0.04313,
+      -0.24008,
+      0.18783,
+      0.06918,
+      0.25129,
+      -0.10765,
+      -0.04292,
+      -0.00391,
+      0.11239,
+      0.32,
+      0.16901,
+      0.36572,
+      -0.10915,
+      -0.09288
+    ]
+  },
+  "cka_fp16": {
+    "label": "FP32_vs_FP16",
+    "layers": [
+      {
+        "layer": 0,
+        "l2_distance": 0.00536,
+        "cosine_similarity": 1.0,
+        "cka": 0.0
+      },
+      {
+        "layer": 1,
+        "l2_distance": 0.005365,
+        "cosine_similarity": 1.0,
+        "cka": 0.999997
+      },
+      {
+        "layer": 2,
+        "l2_distance": 0.006606,
+        "cosine_similarity": 1.0,
+        "cka": 0.999996
+      },
+      {
+        "layer": 3,
+        "l2_distance": 0.008188,
+        "cosine_similarity": 1.0,
+        "cka": 0.999984
+      },
+      {
+        "layer": 4,
+        "l2_distance": 0.011554,
+        "cosine_similarity": 1.0,
+        "cka": 0.99999
+      },
+      {
+        "layer": 5,
+        "l2_distance": 0.012707,
+        "cosine_similarity": 1.0,
+        "cka": 0.999996
+      },
+      {
+        "layer": 6,
+        "l2_distance": 0.015132,
+        "cosine_similarity": 1.0,
+        "cka": 0.999997
+      },
+      {
+        "layer": 7,
+        "l2_distance": 0.01691,
+        "cosine_similarity": 1.0,
+        "cka": 0.999998
+      },
+      {
+        "layer": 8,
+        "l2_distance": 0.01656,
+        "cosine_similarity": 1.0,
+        "cka": 0.999998
+      },
+      {
+        "layer": 9,
+        "l2_distance": 0.017845,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999997
+      },
+      {
+        "layer": 10,
+        "l2_distance": 0.021117,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999998
+      },
+      {
+        "layer": 11,
+        "l2_distance": 0.017866,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999998
+      },
+      {
+        "layer": 12,
+        "l2_distance": 0.017177,
+        "cosine_similarity": 0.999999,
+        "cka": 0.999998
+      }
+    ]
+  },
+  "cka_int8": {
+    "label": "FP32_vs_INT8",
+    "layers": [
+      {
+        "layer": 0,
+        "l2_distance": 1e-06,
+        "cosine_similarity": 1.0,
+        "cka": 1.0
+      },
+      {
+        "layer": 1,
+        "l2_distance": 0.71937,
+        "cosine_similarity": 0.998417,
+        "cka": 0.971611
+      },
+      {
+        "layer": 2,
+        "l2_distance": 1.097474,
+        "cosine_similarity": 0.996596,
+        "cka": 0.944439
+      },
+      {
+        "layer": 3,
+        "l2_distance": 2.488417,
+        "cosine_similarity": 0.983375,
+        "cka": 0.892814
+      },
+      {
+        "layer": 4,
+        "l2_distance": 3.846328,
+        "cosine_similarity": 0.976626,
+        "cka": 0.902834
+      },
+      {
+        "layer": 5,
+        "l2_distance": 4.083269,
+        "cosine_similarity": 0.976994,
+        "cka": 0.890784
+      },
+      {
+        "layer": 6,
+        "l2_distance": 4.846897,
+        "cosine_similarity": 0.971481,
+        "cka": 0.82586
+      },
+      {
+        "layer": 7,
+        "l2_distance": 5.308846,
+        "cosine_similarity": 0.962963,
+        "cka": 0.870367
+      },
+      {
+        "layer": 8,
+        "l2_distance": 4.77402,
+        "cosine_similarity": 0.963821,
+        "cka": 0.849497
+      },
+      {
+        "layer": 9,
+        "l2_distance": 5.152927,
+        "cosine_similarity": 0.945955,
+        "cka": 0.874594
+      },
+      {
+        "layer": 10,
+        "l2_distance": 6.892171,
+        "cosine_similarity": 0.924942,
+        "cka": 0.887375
+      },
+      {
+        "layer": 11,
+        "l2_distance": 8.126717,
+        "cosine_similarity": 0.874076,
+        "cka": 0.86323
+      },
+      {
+        "layer": 12,
+        "l2_distance": 7.543301,
+        "cosine_similarity": 0.863944,
+        "cka": 0.766654
+      }
+    ]
+  }
+}
