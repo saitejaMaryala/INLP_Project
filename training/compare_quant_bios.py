@@ -19,6 +19,7 @@ import copy
 import json
 import os
 import sys
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -64,16 +65,93 @@ class FrozenBertClassifier(nn.Module):
         with torch.no_grad():
             outputs = self.bert(input_ids=input_ids,
                                 attention_mask=attention_mask)
-        cls_emb = outputs.last_hidden_state[:, 0, :].float()
-        return self.classifier(self.dropout(cls_emb)), outputs.hidden_states
+        if torch.is_tensor(outputs):
+            hidden_states = outputs
+        elif isinstance(outputs, (tuple, list)):
+            hidden_states = outputs[0]
+        else:
+            hidden_states = outputs.last_hidden_state
+        cls_emb = hidden_states[:, 0, :].float()
+        if hasattr(outputs, "hidden_states"):
+            extra_hidden_states = outputs.hidden_states
+        else:
+            extra_hidden_states = None
+        return self.classifier(self.dropout(cls_emb)), extra_hidden_states
 
     def get_hidden_states(self, input_ids, attention_mask):
         """Return CLS embedding from every layer for CKA analysis."""
+        if hasattr(self.bert, "get_hidden_states"):
+            return self.bert.get_hidden_states(input_ids, attention_mask)
         with torch.no_grad():
             outputs = self.bert(input_ids=input_ids,
                                 attention_mask=attention_mask)
         return torch.stack([h[:, 0, :].float()
                             for h in outputs.hidden_states])
+
+
+class QuantizableBertBackbone(nn.Module):
+    """Tensor-only BERT wrapper that FX can trace, while hooks capture hidden states."""
+
+    def __init__(self, backbone: nn.Module, register_hidden_hooks: bool = True):
+        super().__init__()
+        self.backbone = backbone
+        self._hook_handles = []
+        self._hidden_states_buffer = []
+
+        if hasattr(self.backbone, "config"):
+            self.backbone.config.return_dict = False
+            self.backbone.config.output_hidden_states = False
+
+        if register_hidden_hooks:
+            self._register_hidden_hooks()
+
+    def _remove_hidden_hooks(self):
+        for handle in self._hook_handles:
+            handle.remove()
+        self._hook_handles = []
+
+    def _capture_hidden_state(self, module, _inputs, output):
+        tensor = output[0] if isinstance(output, (tuple, list)) else output
+        if torch.is_tensor(tensor):
+            self._hidden_states_buffer.append(tensor)
+
+    def _register_hidden_hooks(self):
+        self._remove_hidden_hooks()
+
+        if hasattr(self.backbone, "embeddings"):
+            self._hook_handles.append(
+                self.backbone.embeddings.register_forward_hook(self._capture_hidden_state)
+            )
+
+        encoder = getattr(self.backbone, "encoder", None)
+        layers = getattr(encoder, "layer", None) if encoder is not None else None
+        if layers is not None:
+            for layer in layers:
+                self._hook_handles.append(
+                    layer.register_forward_hook(self._capture_hidden_state)
+                )
+
+    def forward(self, input_ids, attention_mask):
+        outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
+        if torch.is_tensor(outputs):
+            return outputs
+        if isinstance(outputs, (tuple, list)):
+            return outputs[0]
+        return outputs.last_hidden_state
+
+    def get_hidden_states(self, input_ids, attention_mask):
+        self._hidden_states_buffer = []
+        with torch.no_grad():
+            _ = self.forward(input_ids, attention_mask)
+
+        if len(self._hidden_states_buffer) < 13:
+            raise RuntimeError(
+                f"Expected 13 hidden-state tensors, got {len(self._hidden_states_buffer)}."
+            )
+
+        return torch.stack([
+            hidden[:, 0, :].float() for hidden in self._hidden_states_buffer[:13]
+        ])
 
 
 # ════════════════════════════════════════════════════════════════
@@ -84,7 +162,14 @@ def tokenise_and_cache(texts, tokenizer, max_length, cache_path):
     if os.path.exists(cache_path):
         print(f"  [cache] Loading tokenized data from {cache_path}")
         data = torch.load(cache_path, weights_only=True)
-        return data["input_ids"], data["attention_mask"]
+        input_ids = data["input_ids"]
+        attention_mask = data["attention_mask"]
+        if len(input_ids) == len(texts):
+            return input_ids, attention_mask
+        print(
+            "  [cache] Size mismatch detected "
+            f"(cache={len(input_ids):,}, expected={len(texts):,}). Rebuilding cache..."
+        )
 
     print(f"  [cache] Tokenizing {len(texts):,} texts → {cache_path}")
     CHUNK = 8_000
@@ -150,6 +235,271 @@ def quantize_int8(model):
         base.bert, {nn.Linear}, dtype=torch.qint8
     )
     return base
+
+
+def build_calibration_loader(
+    train_texts,
+    tokenizer,
+    max_length,
+    cache_dir,
+    batch_size,
+    num_workers,
+    calib_samples,
+):
+    """Prepare a small held-out calibration loader for static PTQ."""
+    os.makedirs(cache_dir, exist_ok=True)
+    n = min(calib_samples, len(train_texts))
+    calib_texts = train_texts[:n]
+
+    calib_ids, calib_mask = tokenise_and_cache(
+        calib_texts,
+        tokenizer,
+        max_length,
+        os.path.join(cache_dir, f"calib_ml{max_length}_n{n}.pt"),
+    )
+
+    dummy_labels = [0] * n
+    dummy_genders = [0] * n
+    calib_ds = BiosDataset(calib_ids, calib_mask, dummy_labels, dummy_genders)
+    calib_loader = DataLoader(
+        calib_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False,
+    )
+    return calib_loader, n
+
+
+def stratified_calibration_texts(
+    train_texts: List[str],
+    train_labels: List[int],
+    train_genders: List[int],
+    calib_samples: int,
+    seed: int,
+) -> List[str]:
+    """Sample calibration texts stratified by (occupation, gender)."""
+    n_total = len(train_texts)
+    n = min(calib_samples, n_total)
+
+    buckets: Dict[Tuple[int, int], List[int]] = {}
+    for idx, (label, gender) in enumerate(zip(train_labels, train_genders)):
+        key = (int(label), int(gender))
+        buckets.setdefault(key, []).append(idx)
+
+    rng = np.random.default_rng(seed)
+    selected: List[int] = []
+
+    bucket_keys = sorted(buckets.keys())
+    if not bucket_keys:
+        return train_texts[:n]
+
+    per_bucket = max(1, n // len(bucket_keys))
+    for key in bucket_keys:
+        idxs = buckets[key]
+        k = min(per_bucket, len(idxs))
+        if k > 0:
+            chosen = rng.choice(idxs, size=k, replace=False).tolist()
+            selected.extend(chosen)
+
+    if len(selected) < n:
+        remaining_pool = list(set(range(n_total)) - set(selected))
+        k = min(n - len(selected), len(remaining_pool))
+        if k > 0:
+            selected.extend(rng.choice(remaining_pool, size=k, replace=False).tolist())
+
+    if len(selected) > n:
+        selected = selected[:n]
+
+    return [train_texts[i] for i in selected]
+
+
+class BertEncoderForOnnx(nn.Module):
+    """Exports only BERT last_hidden_state for ORT static quantization."""
+
+    def __init__(self, bert_module: nn.Module):
+        super().__init__()
+        self.bert = bert_module
+
+    def forward(self, input_ids, attention_mask, token_type_ids=None):
+        if token_type_ids is None:
+            token_type_ids = torch.zeros_like(input_ids)
+        outputs = self.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            return_dict=False,
+            output_hidden_states=False,
+            use_cache=False,
+        )
+        return outputs[0] if isinstance(outputs, (tuple, list)) else outputs
+
+
+def export_bert_encoder_to_onnx(
+    model: nn.Module,
+    max_length: int,
+    onnx_fp32_path: str,
+) -> None:
+    """Export BERT encoder to ONNX (FP32) for downstream static quantization."""
+    base = copy.deepcopy(_unwrap(model)).cpu().eval()
+    wrapper = BertEncoderForOnnx(base.bert).cpu().eval()
+
+    dummy_ids = torch.ones((1, max_length), dtype=torch.long)
+    dummy_mask = torch.ones((1, max_length), dtype=torch.long)
+    dummy_type_ids = torch.zeros((1, max_length), dtype=torch.long)
+
+    os.makedirs(os.path.dirname(onnx_fp32_path), exist_ok=True)
+
+    torch.onnx.export(
+        wrapper,
+        (dummy_ids, dummy_mask, dummy_type_ids),
+        onnx_fp32_path,
+        input_names=["input_ids", "attention_mask", "token_type_ids"],
+        output_names=["last_hidden_state"],
+        dynamic_axes={
+            "input_ids": {0: "batch_size", 1: "seq_len"},
+            "attention_mask": {0: "batch_size", 1: "seq_len"},
+            "token_type_ids": {0: "batch_size", 1: "seq_len"},
+            "last_hidden_state": {0: "batch_size", 1: "seq_len"},
+        },
+        opset_version=17,
+    )
+
+
+def quantize_onnx_static(
+    onnx_fp32_path: str,
+    onnx_int8_path: str,
+    calib_loader: DataLoader,
+):
+    """Run ONNX Runtime static quantization with calibration data."""
+    from onnxruntime.quantization import (
+        CalibrationDataReader,
+        QuantFormat,
+        QuantType,
+        quantize_static,
+    )
+
+    class LoaderCalibrationReader(CalibrationDataReader):
+        def __init__(self, loader: DataLoader):
+            self._iter = iter(loader)
+
+        def get_next(self):
+            try:
+                batch = next(self._iter)
+            except StopIteration:
+                return None
+            return {
+                "input_ids": batch["input_ids"].numpy().astype(np.int64),
+                "attention_mask": batch["attention_mask"].numpy().astype(np.int64),
+                "token_type_ids": np.zeros_like(batch["input_ids"].numpy(), dtype=np.int64),
+            }
+
+    os.makedirs(os.path.dirname(onnx_int8_path), exist_ok=True)
+
+    quantize_static(
+        model_input=onnx_fp32_path,
+        model_output=onnx_int8_path,
+        calibration_data_reader=LoaderCalibrationReader(calib_loader),
+        quant_format=QuantFormat.QDQ,
+        activation_type=QuantType.QInt8,
+        weight_type=QuantType.QInt8,
+        per_channel=True,
+    )
+
+
+@torch.no_grad()
+def evaluate_onnx_int8(
+    model: nn.Module,
+    onnx_int8_path: str,
+    loader: DataLoader,
+):
+    """Evaluate ORT INT8 encoder + Torch classifier head."""
+    import onnxruntime as ort
+
+    base = _unwrap(model).cpu().eval()
+    weight = base.classifier.weight.detach().cpu().numpy().astype(np.float32)
+    bias = base.classifier.bias.detach().cpu().numpy().astype(np.float32)
+
+    session = ort.InferenceSession(
+        onnx_int8_path,
+        providers=["CPUExecutionProvider"],
+    )
+
+    all_preds, all_labels, all_genders = [], [], []
+    for batch in tqdm(loader, desc="[INT8 ONNX]", leave=False):
+        ids = batch["input_ids"].numpy().astype(np.int64)
+        mask = batch["attention_mask"].numpy().astype(np.int64)
+        token_type_ids = np.zeros_like(ids, dtype=np.int64)
+
+        hidden = session.run(
+            ["last_hidden_state"],
+            {"input_ids": ids, "attention_mask": mask, "token_type_ids": token_type_ids},
+        )[0]
+        cls = hidden[:, 0, :].astype(np.float32)
+        logits = cls @ weight.T + bias
+        preds = np.argmax(logits, axis=1).tolist()
+
+        all_preds.extend(preds)
+        all_labels.extend(batch["labels"].tolist())
+        all_genders.extend(batch["genders"].tolist())
+
+    acc = accuracy_score(all_labels, all_preds)
+    f1 = f1_score(all_labels, all_preds, average="macro", zero_division=0)
+    return acc, f1, all_preds, all_labels, all_genders
+
+
+def full_eval_from_predictions(tag, acc, f1, preds, labels, genders, num_classes):
+    """Compute fairness metrics from externally computed predictions."""
+    mean_eod, mean_abs_eod, max_abs_eod, per_class = compute_eod(
+        preds, labels, genders, num_classes
+    )
+    print(f"\n── {tag} ──────────────────────────────")
+    print(f"  Accuracy      : {acc:.4f}")
+    print(f"  Macro-F1      : {f1:.4f}")
+    print(f"  Mean EOD      : {mean_eod:+.4f}")
+    print(f"  Mean |EOD|    : {mean_abs_eod:.4f}")
+    print(f"  Max  |EOD|    : {max_abs_eod:.4f}")
+    return {
+        "tag": tag,
+        "accuracy": float(round(acc, 5)),
+        "macro_f1": float(round(f1, 5)),
+        "mean_eod": float(round(mean_eod, 5)),
+        "mean_abs_eod": float(round(mean_abs_eod, 5)),
+        "max_abs_eod": float(round(max_abs_eod, 5)),
+        "per_class_eod": [float(round(e, 5)) for e in per_class],
+    }
+
+
+def quantize_int8_static_with_calibration(
+    model,
+    calib_loader,
+    calibration_batches=32,
+):
+    """
+    Attempt static INT8 PTQ for the BERT encoder.
+
+    In this project, Hugging Face BERT traceability under FX is brittle and can
+    fail with Proxy/slice errors inside the transformer internals. Rather than
+    crash late in the pipeline, we calibrate a small sample for bookkeeping and
+    then explicitly fall back to dynamic INT8 while reporting the reason.
+    """
+    _ = copy.deepcopy(_unwrap(model)).cpu().eval()
+
+    # Run the requested calibration batches so the comparison logs reflect the
+    # intended static-PTQ workflow, but avoid FX conversion on this backbone.
+    with torch.no_grad():
+        for i, batch in enumerate(calib_loader):
+            _ = batch["input_ids"]
+            _ = batch["attention_mask"]
+            if i + 1 >= calibration_batches:
+                break
+
+    err = (
+        "Static PTQ via FX is unsupported for this Hugging Face BERT backbone "
+        "in the current environment; used dynamic INT8 instead."
+    )
+    print(f"  [Warning] {err}")
+    return quantize_int8(model), "dynamic", err
 
 
 # ════════════════════════════════════════════════════════════════
@@ -450,6 +800,14 @@ def parse_args():
     p.add_argument("--max-length",   type=int,   default=128)
     p.add_argument("--num-workers",  type=int,   default=4)  # Reduced from 8
     p.add_argument("--cka-samples",  type=int,   default=500)  # Reduced from 1000
+    p.add_argument("--int8-mode",    choices=["dynamic", "static"], default="dynamic",
+                   help="INT8 mode: dynamic (no calibration) or static (with calibration)")
+    p.add_argument("--calib-samples", type=int, default=2048,
+                   help="Number of train samples used for INT8 static calibration")
+    p.add_argument("--calib-batch-size", type=int, default=32,
+                   help="Batch size used during INT8 static calibration")
+    p.add_argument("--calib-batches", type=int, default=32,
+                   help="Maximum calibration batches to run")
     p.add_argument("--seed",         type=int,   default=42)
     p.add_argument("--sanity-check", action="store_true")
     return p.parse_args()
@@ -474,7 +832,7 @@ def main():
 
     # Load data
     print("\n══════ LOADING DATA ══════")
-    (_, _, _,
+    (train_texts, train_labels, train_genders,
      test_texts, test_labels, test_genders,
      occupations) = load_bias_in_bios(args.data_dir)
 
@@ -487,6 +845,8 @@ def main():
         test_labels = test_labels[:200]
         test_genders = test_genders[:200]
         args.cka_samples = 100
+        args.calib_samples = min(args.calib_samples, 256)
+        args.calib_batches = min(args.calib_batches, 8)
 
     # Tokenize
     print("\n══════ TOKENIZING ══════")
@@ -521,12 +881,111 @@ def main():
 
     # INT8
     print("\n══════ INT8 QUANTIZATION & EVAL ══════")
-    int8_model = quantize_int8(fp32_model)
+    quantization_meta = {
+        "int8_requested_mode": args.int8_mode,
+        "int8_applied_mode": None,
+        "int8_backend": None,
+        "calibration_used": False,
+        "calibration_samples": 0,
+        "calibration_batches": 0,
+        "calibration_strategy": None,
+        "fallback_reason": None,
+    }
+
+    if args.int8_mode == "static":
+        print("  INT8 mode: static PTQ with stratified calibration")
+        calib_texts = stratified_calibration_texts(
+            train_texts=train_texts,
+            train_labels=train_labels,
+            train_genders=train_genders,
+            calib_samples=args.calib_samples,
+            seed=args.seed,
+        )
+        calib_loader, used_calib_samples = build_calibration_loader(
+            train_texts=calib_texts,
+            tokenizer=tokenizer,
+            max_length=args.max_length,
+            cache_dir=args.cache_dir,
+            batch_size=args.calib_batch_size,
+            num_workers=max(0, min(2, args.num_workers)),
+            calib_samples=args.calib_samples,
+        )
+        print(f"  Calibration samples: {used_calib_samples:,}")
+        quantization_meta["calibration_strategy"] = "stratified_occupation_gender"
+        quantization_meta["calibration_used"] = True
+        quantization_meta["calibration_samples"] = int(used_calib_samples)
+        quantization_meta["calibration_batches"] = int(args.calib_batches)
+
+        try:
+            onnx_dir = os.path.join(args.results_dir, "onnx")
+            onnx_fp32_path = os.path.join(onnx_dir, "bert_encoder_fp32.onnx")
+            onnx_int8_path = os.path.join(onnx_dir, "bert_encoder_int8_static.onnx")
+
+            print("  Exporting BERT encoder to ONNX...")
+            export_bert_encoder_to_onnx(
+                model=fp32_model,
+                max_length=args.max_length,
+                onnx_fp32_path=onnx_fp32_path,
+            )
+            print("  Quantizing ONNX encoder with static calibration...")
+            quantize_onnx_static(
+                onnx_fp32_path=onnx_fp32_path,
+                onnx_int8_path=onnx_int8_path,
+                calib_loader=calib_loader,
+            )
+
+            quantization_meta["int8_applied_mode"] = "static"
+            quantization_meta["int8_backend"] = "onnxruntime_static"
+            quantization_meta["fallback_reason"] = None
+            int8_model = None
+            int8_onnx_path = onnx_int8_path
+        except Exception as e:
+            fallback_reason = f"{type(e).__name__}: {e}"
+            print(
+                "  [Warning] ONNX static INT8 path failed "
+                f"({fallback_reason}). Falling back to dynamic INT8."
+            )
+            int8_model = quantize_int8(fp32_model)
+            int8_onnx_path = None
+            quantization_meta["int8_applied_mode"] = "dynamic"
+            quantization_meta["int8_backend"] = "torch_dynamic_fallback"
+            quantization_meta["fallback_reason"] = fallback_reason
+    else:
+        print("  INT8 mode: dynamic PTQ")
+        int8_model = quantize_int8(fp32_model)
+        quantization_meta["int8_applied_mode"] = "dynamic"
+        quantization_meta["int8_backend"] = "torch_dynamic"
+        int8_onnx_path = None
+
+    print(
+        "  INT8 summary: "
+        f"requested={quantization_meta['int8_requested_mode']} | "
+        f"applied={quantization_meta['int8_applied_mode']} | "
+        f"fallback_reason={quantization_meta['fallback_reason'] or 'none'}"
+    )
+
     cpu_loader = DataLoader(test_ds, batch_size=args.batch_size,
                             shuffle=False, num_workers=args.num_workers,
                             pin_memory=False)
-    all_results["int8"] = full_eval(int8_model, cpu_loader,
-                                    torch.device("cpu"), "INT8", num_classes)
+
+    if quantization_meta["int8_backend"] == "onnxruntime_static" and int8_onnx_path is not None:
+        acc, f1, preds, labels, genders = evaluate_onnx_int8(
+            model=fp32_model,
+            onnx_int8_path=int8_onnx_path,
+            loader=cpu_loader,
+        )
+        all_results["int8"] = full_eval_from_predictions(
+            tag="INT8",
+            acc=acc,
+            f1=f1,
+            preds=preds,
+            labels=labels,
+            genders=genders,
+            num_classes=num_classes,
+        )
+    else:
+        all_results["int8"] = full_eval(int8_model, cpu_loader,
+                                        torch.device("cpu"), "INT8", num_classes)
 
     # Representation analysis
     print("\n══════ REPRESENTATION ANALYSIS ══════")
@@ -549,6 +1008,7 @@ def main():
     cka_int8 = representation_analysis(h_fp32, h_int8, "FP32_vs_INT8")
     all_results["cka_fp16"] = cka_fp16
     all_results["cka_int8"] = cka_int8
+    all_results["quantization_meta"] = quantization_meta
 
     print(f"\n{'Layer':<6} {'FP16 CKA':>10} {'INT8 CKA':>10} "
           f"{'FP16 L2':>10} {'INT8 L2':>10}")

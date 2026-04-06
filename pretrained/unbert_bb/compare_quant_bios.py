@@ -85,7 +85,14 @@ def tokenise_and_cache(texts, tokenizer, max_length, cache_path):
     if os.path.exists(cache_path):
         print(f"  [cache] Loading tokenized data from {cache_path}")
         data = torch.load(cache_path, weights_only=True)
-        return data["input_ids"], data["attention_mask"]
+        input_ids = data["input_ids"]
+        attention_mask = data["attention_mask"]
+        if len(input_ids) == len(texts):
+            return input_ids, attention_mask
+        print(
+            "  [cache] Size mismatch detected "
+            f"(cache={len(input_ids):,}, expected={len(texts):,}). Rebuilding cache..."
+        )
 
     print(f"  [cache] Tokenizing {len(texts):,} texts → {cache_path}")
     CHUNK = 8_000
@@ -151,6 +158,82 @@ def quantize_int8(model):
         base.bert, {nn.Linear}, dtype=torch.qint8
     )
     return base
+
+
+def build_calibration_loader(
+    train_texts,
+    tokenizer,
+    max_length,
+    cache_dir,
+    batch_size,
+    num_workers,
+    calib_samples,
+):
+    """Prepare a small held-out calibration loader for static PTQ."""
+    os.makedirs(cache_dir, exist_ok=True)
+    n = min(calib_samples, len(train_texts))
+    calib_texts = train_texts[:n]
+
+    calib_ids, calib_mask = tokenise_and_cache(
+        calib_texts,
+        tokenizer,
+        max_length,
+        os.path.join(cache_dir, f"calib_ml{max_length}_n{n}.pt"),
+    )
+
+    dummy_labels = [0] * n
+    dummy_genders = [0] * n
+    calib_ds = BiosDataset(calib_ids, calib_mask, dummy_labels, dummy_genders)
+    calib_loader = DataLoader(
+        calib_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=False,
+    )
+    return calib_loader, n
+
+
+def quantize_int8_static_with_calibration(
+    model,
+    calib_loader,
+    calibration_batches=32,
+):
+    """
+    Static INT8 PTQ for the BERT encoder via FX graph mode.
+    Falls back to dynamic INT8 if static tracing/calibration is unsupported.
+    """
+    base = copy.deepcopy(_unwrap(model)).cpu().eval()
+
+    try:
+        from torch.ao.quantization import get_default_qconfig_mapping
+        from torch.ao.quantization.quantize_fx import convert_fx, prepare_fx
+
+        first_batch = next(iter(calib_loader))
+        example_inputs = (first_batch["input_ids"], first_batch["attention_mask"])
+
+        qconfig_mapping = get_default_qconfig_mapping("fbgemm")
+        prepared_bert = prepare_fx(
+            base.bert,
+            qconfig_mapping,
+            example_inputs=example_inputs,
+        )
+
+        with torch.no_grad():
+            for i, batch in enumerate(calib_loader):
+                prepared_bert(batch["input_ids"], batch["attention_mask"])
+                if i + 1 >= calibration_batches:
+                    break
+
+        base.bert = convert_fx(prepared_bert)
+        return base, "static", None
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        print(
+            "  [Warning] Static INT8 calibration path failed "
+            f"({err}). Falling back to dynamic INT8."
+        )
+        return quantize_int8(model), "dynamic", err
 
 
 # ════════════════════════════════════════════════════════════════
@@ -451,6 +534,14 @@ def parse_args():
     p.add_argument("--max-length",   type=int,   default=128)
     p.add_argument("--num-workers",  type=int,   default=8)
     p.add_argument("--cka-samples",  type=int,   default=1000)
+    p.add_argument("--int8-mode",    choices=["dynamic", "static"], default="dynamic",
+                   help="INT8 mode: dynamic (no calibration) or static (with calibration)")
+    p.add_argument("--calib-samples", type=int, default=2048,
+                   help="Number of train samples used for INT8 static calibration")
+    p.add_argument("--calib-batch-size", type=int, default=32,
+                   help="Batch size used during INT8 static calibration")
+    p.add_argument("--calib-batches", type=int, default=32,
+                   help="Maximum calibration batches to run")
     p.add_argument("--seed",         type=int,   default=42)
     p.add_argument("--sanity-check", action="store_true")
     return p.parse_args()
@@ -475,7 +566,7 @@ def main():
 
     # Load data
     print("\n══════ LOADING DATA ══════")
-    (_, _, _,
+    (train_texts, _, _,
      test_texts, test_labels, test_genders,
      occupations) = load_bias_in_bios(args.data_dir)
 
@@ -488,6 +579,8 @@ def main():
         test_labels = test_labels[:200]
         test_genders = test_genders[:200]
         args.cka_samples = 100
+        args.calib_samples = min(args.calib_samples, 256)
+        args.calib_batches = min(args.calib_batches, 8)
 
     # Tokenize
     print("\n══════ TOKENIZING ══════")
@@ -522,7 +615,49 @@ def main():
 
     # INT8
     print("\n══════ INT8 QUANTIZATION & EVAL ══════")
-    int8_model = quantize_int8(fp32_model)
+    quantization_meta = {
+        "int8_requested_mode": args.int8_mode,
+        "int8_applied_mode": None,
+        "calibration_used": False,
+        "calibration_samples": 0,
+        "calibration_batches": 0,
+        "fallback_reason": None,
+    }
+
+    if args.int8_mode == "static":
+        print("  INT8 mode: static PTQ with held-out calibration")
+        calib_loader, used_calib_samples = build_calibration_loader(
+            train_texts=train_texts,
+            tokenizer=tokenizer,
+            max_length=args.max_length,
+            cache_dir=args.cache_dir,
+            batch_size=args.calib_batch_size,
+            num_workers=max(0, min(2, args.num_workers)),
+            calib_samples=args.calib_samples,
+        )
+        print(f"  Calibration samples: {used_calib_samples:,}")
+        int8_model, applied_mode, fallback_reason = quantize_int8_static_with_calibration(
+            fp32_model,
+            calib_loader,
+            calibration_batches=args.calib_batches,
+        )
+        quantization_meta["int8_applied_mode"] = applied_mode
+        quantization_meta["calibration_used"] = True
+        quantization_meta["calibration_samples"] = int(used_calib_samples)
+        quantization_meta["calibration_batches"] = int(args.calib_batches)
+        quantization_meta["fallback_reason"] = fallback_reason
+    else:
+        print("  INT8 mode: dynamic PTQ")
+        int8_model = quantize_int8(fp32_model)
+        quantization_meta["int8_applied_mode"] = "dynamic"
+
+    print(
+        "  INT8 summary: "
+        f"requested={quantization_meta['int8_requested_mode']} | "
+        f"applied={quantization_meta['int8_applied_mode']} | "
+        f"fallback_reason={quantization_meta['fallback_reason'] or 'none'}"
+    )
+
     cpu_loader = DataLoader(test_ds, batch_size=args.batch_size,
                             shuffle=False, num_workers=args.num_workers,
                             pin_memory=False)
@@ -550,6 +685,7 @@ def main():
     cka_int8 = representation_analysis(h_fp32, h_int8, "FP32_vs_INT8")
     all_results["cka_fp16"] = cka_fp16
     all_results["cka_int8"] = cka_int8
+    all_results["quantization_meta"] = quantization_meta
 
     print(f"\n{'Layer':<6} {'FP16 CKA':>10} {'INT8 CKA':>10} "
           f"{'FP16 L2':>10} {'INT8 L2':>10}")

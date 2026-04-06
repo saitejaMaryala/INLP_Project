@@ -10,3 +10,5 @@ kagglehub
 tqdm
 matplotlib
 seaborn
+onnx
+onnxruntime

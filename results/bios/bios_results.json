@@ -1,80 +1,116 @@
 {
   "fp32": {
     "tag": "FP32",
-    "accuracy": 0.54,
-    "macro_f1": 0.24807,
-    "mean_eod": -0.09782,
-    "max_abs_eod": 1.0,
+    "accuracy": 0.73648,
+    "macro_f1": 0.669,
+    "mean_eod": -0.02644,
+    "mean_abs_eod": 0.13504,
+    "max_abs_eod": 0.52013,
     "per_class_eod": [
-      -1.0,
-      -0.33333,
-      0.44444,
-      0.0,
-      0.0,
-      1.0,
-      0.5,
-      0.0,
-      -1.0,
-      -0.75,
-      0.71429,
-      -0.21429,
-      -1.0,
-      -0.02412,
-      0.0,
-      0.0,
-      0.0
+      0.01272,
+      -0.00358,
+      0.05844,
+      0.29541,
+      0.16256,
+      0.00195,
+      -0.00343,
+      -0.26124,
+      0.17987,
+      0.00911,
+      -0.3026,
+      -0.04674,
+      -0.52013,
+      -0.27813,
+      -0.02392,
+      -0.41767,
+      0.05581,
+      0.03313,
+      0.09405,
+      -0.11658,
+      -0.04747,
+      0.04662,
+      -0.04247,
+      0.16896,
+      0.07451,
+      0.32734,
+      -0.19564,
+      -0.00114
     ]
   },
   "fp16": {
     "tag": "FP16",
-    "accuracy": 0.54,
-    "macro_f1": 0.24807,
-    "mean_eod": -0.09782,
-    "max_abs_eod": 1.0,
+    "accuracy": 0.73648,
+    "macro_f1": 0.66889,
+    "mean_eod": -0.02646,
+    "mean_abs_eod": 0.13483,
+    "max_abs_eod": 0.52077,
     "per_class_eod": [
-      -1.0,
-      -0.33333,
-      0.44444,
-      0.0,
-      0.0,
-      1.0,
-      0.5,
-      0.0,
-      -1.0,
-      -0.75,
-      0.71429,
-      -0.21429,
-      -1.0,
-      -0.02412,
-      0.0,
-      0.0,
-      0.0
+      0.01272,
+      -0.00358,
+      0.05844,
+      0.29541,
+      0.16256,
+      0.00195,
+      -0.00343,
+      -0.26124,
+      0.17673,
+      0.00911,
+      -0.3026,
+      -0.04553,
+      -0.52077,
+      -0.27836,
+      -0.02297,
+      -0.41767,
+      0.05581,
+      0.03313,
+      0.09405,
+      -0.1162,
+      -0.04631,
+      0.0465,
+      -0.04212,
+      0.16896,
+      0.07451,
+      0.32734,
+      -0.19605,
+      -0.00114
     ]
   },
   "int8": {
     "tag": "INT8",
-    "accuracy": 0.31,
-    "macro_f1": 0.14898,
-    "mean_eod": -0.07102,
-    "max_abs_eod": 1.0,
+    "accuracy": 0.59955,
+    "macro_f1": 0.54424,
+    "mean_eod": 0.01076,
+    "mean_abs_eod": 0.15544,
+    "max_abs_eod": 0.40743,
     "per_class_eod": [
-      -1.0,
-      0.0,
-      0.22222,
-      0.0,
-      1.0,
-      1.0,
-      0.0,
-      -0.46667,
-      0.0,
-      -0.75,
-      0.42857,
-      -0.28571,
-      -1.0,
-      -0.35573,
-      0.0,
-      0.0,
-      0.0
+      0.11034,
+      0.0906,
+      0.017,
+      0.16823,
+      0.24787,
+      0.03146,
+      0.1175,
+      -0.23022,
+      0.25552,
+      0.15242,
+      -0.2782,
+      -0.02942,
+      -0.40743,
+      -0.27583,
+      -0.05766,
+      -0.15841,
+      0.05702,
+      -0.00261,
+      0.19107,
+      -0.26103,
+      -0.0397,
+      0.05508,
+      -0.02947,
+      0.28113,
+      0.17368,
+      0.37795,
+      -0.15355,
+      -0.10199
     ]
   },
   "cka_fp16": {
@@ -88,75 +124,75 @@
       },
       {
         "layer": 1,
-        "l2_distance": 0.005437,
+        "l2_distance": 0.005366,
         "cosine_similarity": 1.0,
-        "cka": 0.999998
+        "cka": 0.999997
       },
       {
         "layer": 2,
-        "l2_distance": 0.006597,
+        "l2_distance": 0.006605,
         "cosine_similarity": 1.0,
-        "cka": 0.999997
+        "cka": 0.999996
       },
       {
         "layer": 3,
-        "l2_distance": 0.00811,
+        "l2_distance": 0.008244,
         "cosine_similarity": 1.0,
-        "cka": 0.999991
+        "cka": 0.999985
       },
       {
         "layer": 4,
-        "l2_distance": 0.011504,
+        "l2_distance": 0.011618,
         "cosine_similarity": 1.0,
-        "cka": 0.999994
+        "cka": 0.99999
       },
       {
         "layer": 5,
-        "l2_distance": 0.012889,
+        "l2_distance": 0.012727,
+        "cosine_similarity": 1.0,
+        "cka": 0.999995
+      },
+      {
+        "layer": 6,
+        "l2_distance": 0.015191,
         "cosine_similarity": 1.0,
         "cka": 0.999997
       },
       {
-        "layer": 6,
-        "l2_distance": 0.015103,
+        "layer": 7,
+        "l2_distance": 0.016896,
         "cosine_similarity": 1.0,
         "cka": 0.999998
       },
       {
-        "layer": 7,
-        "l2_distance": 0.016786,
-        "cosine_similarity": 1.0,
-        "cka": 0.999999
-      },
-      {
         "layer": 8,
-        "l2_distance": 0.016738,
+        "l2_distance": 0.016688,
         "cosine_similarity": 1.0,
         "cka": 0.999998
       },
       {
         "layer": 9,
-        "l2_distance": 0.018101,
+        "l2_distance": 0.017905,
         "cosine_similarity": 0.999999,
         "cka": 0.999997
       },
       {
         "layer": 10,
-        "l2_distance": 0.021346,
+        "l2_distance": 0.021177,
         "cosine_similarity": 0.999999,
         "cka": 0.999998
       },
       {
         "layer": 11,
-        "l2_distance": 0.018261,
+        "l2_distance": 0.01785,
         "cosine_similarity": 0.999999,
-        "cka": 0.999999
+        "cka": 0.999998
       },
       {
         "layer": 12,
-        "l2_distance": 0.01738,
+        "l2_distance": 0.016925,
         "cosine_similarity": 0.999999,
-        "cka": 0.999999
+        "cka": 0.999998
       }
     ]
   },
@@ -167,80 +203,88 @@
         "layer": 0,
         "l2_distance": 1e-06,
         "cosine_similarity": 1.0,
-        "cka": 1.0
+        "cka": 0.999999
       },
       {
         "layer": 1,
-        "l2_distance": 0.717465,
-        "cosine_similarity": 0.998427,
-        "cka": 0.977112
+        "l2_distance": 0.702005,
+        "cosine_similarity": 0.99849,
+        "cka": 0.971768
       },
       {
         "layer": 2,
-        "l2_distance": 1.095179,
-        "cosine_similarity": 0.996609,
-        "cka": 0.959976
+        "l2_distance": 1.078683,
+        "cosine_similarity": 0.996707,
+        "cka": 0.943596
       },
       {
         "layer": 3,
-        "l2_distance": 2.488402,
-        "cosine_similarity": 0.983393,
-        "cka": 0.917834
+        "l2_distance": 2.482889,
+        "cosine_similarity": 0.983446,
+        "cka": 0.892135
       },
       {
         "layer": 4,
-        "l2_distance": 3.838974,
-        "cosine_similarity": 0.976701,
-        "cka": 0.926412
+        "l2_distance": 3.842611,
+        "cosine_similarity": 0.976669,
+        "cka": 0.903939
       },
       {
         "layer": 5,
-        "l2_distance": 4.063021,
-        "cosine_similarity": 0.977219,
-        "cka": 0.909221
+        "l2_distance": 4.071902,
+        "cosine_similarity": 0.977119,
+        "cka": 0.888889
       },
       {
         "layer": 6,
-        "l2_distance": 4.857942,
-        "cosine_similarity": 0.971335,
-        "cka": 0.862675
+        "l2_distance": 4.820727,
+        "cosine_similarity": 0.971778,
+        "cka": 0.828497
       },
       {
         "layer": 7,
-        "l2_distance": 5.355961,
-        "cosine_similarity": 0.962246,
-        "cka": 0.868771
+        "l2_distance": 5.292498,
+        "cosine_similarity": 0.963225,
+        "cka": 0.881177
       },
       {
         "layer": 8,
-        "l2_distance": 4.833731,
-        "cosine_similarity": 0.962747,
-        "cka": 0.846625
+        "l2_distance": 4.761322,
+        "cosine_similarity": 0.964155,
+        "cka": 0.87712
       },
       {
         "layer": 9,
-        "l2_distance": 5.128815,
-        "cosine_similarity": 0.945848,
-        "cka": 0.882357
+        "l2_distance": 5.093795,
+        "cosine_similarity": 0.94712,
+        "cka": 0.890011
       },
       {
         "layer": 10,
-        "l2_distance": 6.870758,
-        "cosine_similarity": 0.925193,
-        "cka": 0.890958
+        "l2_distance": 6.843543,
+        "cosine_similarity": 0.925654,
+        "cka": 0.889263
       },
       {
         "layer": 11,
-        "l2_distance": 8.122427,
-        "cosine_similarity": 0.874597,
-        "cka": 0.879904
+        "l2_distance": 8.131871,
+        "cosine_similarity": 0.873538,
+        "cka": 0.857981
       },
       {
         "layer": 12,
-        "l2_distance": 7.614319,
-        "cosine_similarity": 0.863108,
-        "cka": 0.839439
+        "l2_distance": 7.468911,
+        "cosine_similarity": 0.866802,
+        "cka": 0.771061
       }
     ]
+  },
+  "quantization_meta": {
+    "int8_requested_mode": "static",
+    "int8_applied_mode": "dynamic",
+    "calibration_used": true,
+    "calibration_samples": 2048,
+    "calibration_batches": 32,
+    "fallback_reason": "TypeError: 'Proxy' object does not support item assignment"
   }
 }

@@ -1,0 +1,55 @@
+{
+  "generated_for": "team_handoff_before_github_push",
+  "bias_in_bios": {
+    "source": "results/bios/bios_results.json",
+    "fp32": {
+      "accuracy": 0.73648,
+      "macro_f1": 0.669,
+      "mean_abs_eod": 0.13504,
+      "max_abs_eod": 0.52013
+    },
+    "fp16": {
+      "accuracy": 0.73648,
+      "macro_f1": 0.66889,
+      "mean_abs_eod": 0.13483,
+      "max_abs_eod": 0.52077
+    },
+    "int8": {
+      "accuracy": 0.59955,
+      "macro_f1": 0.54424,
+      "mean_abs_eod": 0.15544,
+      "max_abs_eod": 0.40743
+    }
+  },
+  "jigsaw": {
+    "source": "latest_local_terminal_run",
+    "fp32": {
+      "accuracy": 0.8945,
+      "macro_f1": 0.6685,
+      "mean_DPD": 0.1418,
+      "mean_EOD": 0.2455
+    },
+    "fp16": {
+      "accuracy": 0.8947,
+      "macro_f1": 0.6689,
+      "mean_DPD": 0.1418,
+      "mean_EOD": 0.2455
+    },
+    "int8": {
+      "accuracy": 0.9262,
+      "macro_f1": 0.5571,
+      "mean_DPD": 0.0129,
+      "mean_EOD": 0.0753
+    },
+    "quantization_meta": {
+      "requested_mode": "static",
+      "applied_mode": "dynamic",
+      "fallback_reason": "static PTQ path failed in current environment"
+    }
+  },
+  "notes": [
+    "FP16 remains close to FP32.",
+    "INT8 can improve fairness metrics while reducing macro_f1.",
+    "Always verify quantization_meta to confirm whether static calibration was actually applied."
+  ]
+}

@@ -1,7 +1,11 @@
 __pycache__/
 venv/
+.venv/
 .ipynb_checkpoints/
 /data/
+!data/
+data/*
+!data/download.py
 data/jigsaw_data/
 data/bias_in_bios/
 data/bias_in_bios_train.csv
@@ -11,3 +15,4 @@ sample_submission.csv
 test_labels.csv
 *.pt
 *.csv
+outputs/

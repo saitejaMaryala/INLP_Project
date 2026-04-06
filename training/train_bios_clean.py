@@ -72,7 +72,14 @@ def tokenise_and_cache(texts, tokenizer, max_length, cache_path):
     if os.path.exists(cache_path):
         print(f"  [cache] Loading tokenised data from {cache_path}")
         data = torch.load(cache_path, weights_only=True)
-        return data["input_ids"], data["attention_mask"]
+        input_ids = data["input_ids"]
+        attention_mask = data["attention_mask"]
+        if len(input_ids) == len(texts):
+            return input_ids, attention_mask
+        print(
+            "  [cache] Size mismatch detected "
+            f"(cache={len(input_ids):,}, expected={len(texts):,}). Rebuilding cache..."
+        )
 
     print(f"  [cache] Tokenising {len(texts):,} texts → {cache_path}")
     CHUNK = 8_000

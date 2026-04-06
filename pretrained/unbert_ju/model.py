@@ -33,7 +33,8 @@ SEED = 42
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 
 # ── Paths ──
-DATA_DIR        = "/ssd_scratch/sai.teja/INLP_Project/data/jigsaw_uni"
+# Uses local workspace by default; override with DATA_DIR env var when needed.
+DATA_DIR        = os.environ.get("DATA_DIR", "data/jigsaw_uni")
 TRAIN_CSV       = os.path.join(DATA_DIR, "train.csv")
 OUTPUT_DIR      = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)

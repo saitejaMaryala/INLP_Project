@@ -16,6 +16,8 @@ Install dependencies:
 # ─────────────────────────────────────────────
 # 0. IMPORTS & CONFIG
 # ─────────────────────────────────────────────
+import copy
+import json
 import os, random, warnings
 import numpy as np
 import pandas as pd
@@ -37,8 +39,8 @@ SEED = 42
 random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
 
 # ── Paths ──
-DATA_DIR        = "/ssd_scratch/sai.teja/INLP_Project/data/jigsaw_uni"
-TRAIN_CSV       = os.path.join(DATA_DIR, "train.csv")
+DATA_DIR        = os.environ.get("DATA_DIR", "data/jigsaw_uni")
+TRAIN_CSV       = TRAIN_CSV = os.path.join(DATA_DIR, "train.csv")
 MODEL_PATH      = "outputs/fp32_classifier_uni.pt"
 OUTPUT_DIR      = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -50,6 +52,14 @@ TOXICITY_THRESH = 0.5
 TRAIN_SAMPLE    = 80_000
 VAL_SAMPLE      = 20_000
 REPR_SAMPLE     = 1_000        # fixed sample for CKA / L2 analysis
+
+# INT8 quantization mode:
+#   "dynamic" = weight-only PTQ (no calibration)
+#   "static"  = activation-aware PTQ with calibration pass
+INT8_MODE        = "static"
+CALIB_SAMPLE     = 8192
+CALIB_BATCH_SIZE = 16
+CALIB_BATCHES    = 128
 
 # ── Sensitive identity columns in Jigsaw ──
 IDENTITY_COLS = [
@@ -158,17 +168,80 @@ class FrozenBertClassifier(nn.Module):
 # 3. QUANTIZATION
 # ─────────────────────────────────────────────
 
-def apply_int8_quantization(fp32_model):
-    """Dynamic INT8 quantization targeting all nn.Linear layers."""
-    print("\n[Quantize] Applying INT8 dynamic quantization …")
-    fp32_model.cpu()
-    int8_model = torch.quantization.quantize_dynamic(
-        fp32_model,
-        {nn.Linear},
-        dtype=torch.qint8,
-    )
-    print("  INT8 model ready.")
-    return int8_model
+def build_calibration_loader(train_df, tokenizer, max_len=MAX_LEN, batch_size=CALIB_BATCH_SIZE,
+                             calib_samples=CALIB_SAMPLE):
+    """Create a held-out calibration loader for static PTQ."""
+    n = min(calib_samples, len(train_df))
+    calib_df = train_df.iloc[:n].reset_index(drop=True)
+    calib_ds = JigsawDataset(calib_df, tokenizer, max_len=max_len)
+    calib_dl = DataLoader(calib_ds, batch_size=batch_size, shuffle=False, num_workers=2)
+    return calib_dl, n
+
+
+def apply_int8_quantization(fp32_model, mode="dynamic", calib_loader=None,
+                            calibration_batches=CALIB_BATCHES):
+    """
+    INT8 PTQ on the frozen BERT encoder.
+    mode="dynamic" uses weight-only dynamic quantization.
+    mode="static" runs FX prepare/convert with a calibration pass.
+    """
+    base_model = copy.deepcopy(fp32_model).cpu().eval()
+
+    if mode == "dynamic":
+        print("\n[Quantize] Applying INT8 dynamic quantization …")
+        base_model.bert = torch.quantization.quantize_dynamic(
+            base_model.bert,
+            {nn.Linear},
+            dtype=torch.qint8,
+        )
+        print("  INT8 model ready.")
+        return base_model, {
+            "requested_mode": mode,
+            "applied_mode": "dynamic",
+            "fallback_reason": None,
+        }
+
+    if calib_loader is None:
+        raise ValueError("Static INT8 mode requires calib_loader.")
+
+    print("\n[Quantize] Applying INT8 static PTQ with calibration …")
+    try:
+        from torch.ao.quantization import get_default_qconfig_mapping
+        from torch.ao.quantization.quantize_fx import convert_fx, prepare_fx
+
+        first_batch = next(iter(calib_loader))
+        example_inputs = (first_batch["input_ids"], first_batch["attention_mask"])
+        qconfig_mapping = get_default_qconfig_mapping("fbgemm")
+
+        prepared_bert = prepare_fx(
+            base_model.bert,
+            qconfig_mapping,
+            example_inputs=example_inputs,
+        )
+
+        with torch.no_grad():
+            for i, batch in enumerate(calib_loader):
+                prepared_bert(batch["input_ids"], batch["attention_mask"])
+                if i + 1 >= calibration_batches:
+                    break
+
+        base_model.bert = convert_fx(prepared_bert)
+        print("  INT8 static model ready.")
+        return base_model, {
+            "requested_mode": mode,
+            "applied_mode": "static",
+            "fallback_reason": None,
+        }
+    except Exception as e:
+        fallback_reason = f"{type(e).__name__}: {e}"
+        print(
+            "  [Warning] Static PTQ calibration failed "
+            f"({fallback_reason}). Falling back to dynamic INT8."
+        )
+        fallback_model, fallback_meta = apply_int8_quantization(base_model, mode="dynamic")
+        fallback_meta["requested_mode"] = "static"
+        fallback_meta["fallback_reason"] = fallback_reason
+        return fallback_model, fallback_meta
 
 
 def apply_fp16_model(fp32_model):
@@ -432,6 +505,36 @@ def print_summary_report(results_all, repr_metrics):
     print("  QUANTIZATION FAIRNESS ANALYSIS — SUMMARY REPORT")
     print("═" * 60)
 
+
+def to_builtin(value):
+    """Convert numpy/scalar containers to JSON-serializable Python types."""
+    if isinstance(value, dict):
+        return {k: to_builtin(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_builtin(v) for v in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def save_results_json(results_all, repr_metrics, quantization_meta, save_path):
+    payload = {
+        "results": to_builtin(results_all),
+        "representation_metrics": to_builtin(repr_metrics),
+        "quantization_meta": to_builtin(quantization_meta),
+        "config": {
+            "int8_mode": INT8_MODE,
+            "calib_sample": CALIB_SAMPLE,
+            "calib_batch_size": CALIB_BATCH_SIZE,
+            "calib_batches": CALIB_BATCHES,
+            "repr_sample": REPR_SAMPLE,
+            "seed": SEED,
+        },
+    }
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"  Saved results JSON -> {save_path}")
+
     header = f"{'Metric':<30} {'FP32':>10} {'FP16':>10} {'INT8':>10}"
     print(header); print("─" * 60)
 
@@ -476,7 +579,7 @@ def main():
         return
 
     # Load data
-    _, val_df = load_jigsaw(TRAIN_CSV)
+    train_df, val_df = load_jigsaw(TRAIN_CSV)
     tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
     # Fixed subset for representation analysis
@@ -502,7 +605,23 @@ def main():
     results_all["fp32"] = compute_fairness_metrics(val_df, fp32_preds, "FP32")
 
     # INT8 quantization
-    int8_model = apply_int8_quantization(fp32_model)
+    if INT8_MODE == "static":
+        calib_loader, used_calib_samples = build_calibration_loader(
+            train_df,
+            tokenizer,
+            max_len=MAX_LEN,
+            batch_size=CALIB_BATCH_SIZE,
+            calib_samples=CALIB_SAMPLE,
+        )
+        print(f"\n[Quantize] Static INT8 calibration samples: {used_calib_samples:,}")
+        int8_model, quantization_meta = apply_int8_quantization(
+            fp32_model,
+            mode="static",
+            calib_loader=calib_loader,
+            calibration_batches=CALIB_BATCHES,
+        )
+    else:
+        int8_model, quantization_meta = apply_int8_quantization(fp32_model, mode="dynamic")
 
     print("\n[Eval] INT8 predictions and hidden states …")
     int8_preds, _, _ = run_inference(
@@ -555,6 +674,12 @@ def main():
         results_all, "eod_per_attr",
         title="Equal Opportunity Difference per Identity Attribute",
         save_path=os.path.join(OUTPUT_DIR, "eod_heatmap.png"),
+    )
+    save_results_json(
+        results_all,
+        repr_metrics,
+        quantization_meta,
+        save_path=os.path.join(OUTPUT_DIR, "quantization_results.json"),
     )
 
     # Print summary
