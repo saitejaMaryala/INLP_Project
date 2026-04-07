@@ -36,6 +36,17 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
 
+from pretrained.unbert_ju.phase23_pipeline import (
+    froc_pipeline,
+    roc_analysis_pipeline,
+    save_phase23_artifacts,
+    plot_fairness_comparison,
+    plot_roc_gap,
+    plot_roc_curves,
+    plot_roc_curves_before_after,
+    write_phase23_verification_report,
+)
+
 # ── path setup ───────────────────────────────────────────────────
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -425,7 +436,7 @@ def evaluate_onnx_int8(
         providers=["CPUExecutionProvider"],
     )
 
-    all_preds, all_labels, all_genders = [], [], []
+    all_preds, all_probs, all_labels, all_genders = [], [], [], []
     for batch in tqdm(loader, desc="[INT8 ONNX]", leave=False):
         ids = batch["input_ids"].numpy().astype(np.int64)
         mask = batch["attention_mask"].numpy().astype(np.int64)
@@ -437,15 +448,19 @@ def evaluate_onnx_int8(
         )[0]
         cls = hidden[:, 0, :].astype(np.float32)
         logits = cls @ weight.T + bias
+        logits_shifted = logits - np.max(logits, axis=1, keepdims=True)
+        exp_logits = np.exp(logits_shifted)
+        probs = exp_logits / np.clip(np.sum(exp_logits, axis=1, keepdims=True), 1e-12, None)
         preds = np.argmax(logits, axis=1).tolist()
 
         all_preds.extend(preds)
+        all_probs.append(probs)
         all_labels.extend(batch["labels"].tolist())
         all_genders.extend(batch["genders"].tolist())
 
     acc = accuracy_score(all_labels, all_preds)
     f1 = f1_score(all_labels, all_preds, average="macro", zero_division=0)
-    return acc, f1, all_preds, all_labels, all_genders
+    return acc, f1, all_preds, np.concatenate(all_probs, axis=0), all_labels, all_genders
 
 
 def full_eval_from_predictions(tag, acc, f1, preds, labels, genders, num_classes):
@@ -527,6 +542,58 @@ def evaluate(model, loader, device, desc="eval"):
     acc = accuracy_score(all_labels, all_preds)
     f1  = f1_score(all_labels, all_preds, average="macro", zero_division=0)
     return acc, f1, all_preds, all_labels, all_genders
+
+
+@torch.no_grad()
+def collect_multiclass_probabilities(model, loader, device, desc="probs"):
+    """Collect softmax probabilities, labels, and groups for multiclass OVR analysis."""
+    model.eval()
+    all_probs, all_labels, all_genders = [], [], []
+
+    for batch in tqdm(loader, desc=f"[{desc}]", leave=False):
+        ids = batch["input_ids"].to(device, non_blocking=True)
+        mask = batch["attention_mask"].to(device, non_blocking=True)
+
+        if device.type == "cuda" and hasattr(model.bert, "half"):
+            with autocast():
+                logits, _ = model(ids, mask)
+        else:
+            logits, _ = model(ids, mask)
+
+        probs = torch.softmax(logits.float(), dim=1).cpu().numpy()
+        all_probs.append(probs)
+        all_labels.extend(batch["labels"].tolist())
+        all_genders.extend(batch["genders"].tolist())
+
+    return np.concatenate(all_probs, axis=0), np.array(all_labels), np.array(all_genders)
+
+
+def build_ovr_results_for_phase23(model_scores, labels, groups):
+    """Convert multiclass occupation outputs into a binary one-vs-rest pool for Phase 2/3."""
+    labels = np.asarray(labels)
+    groups = np.asarray(groups)
+
+    results = {}
+    for model_name, probs in model_scores.items():
+        probs = np.asarray(probs)
+        n_classes = probs.shape[1]
+
+        y_true_blocks = []
+        y_score_blocks = []
+        group_blocks = []
+
+        for class_id in range(n_classes):
+            y_true_blocks.append((labels == class_id).astype(int))
+            y_score_blocks.append(probs[:, class_id].astype(float))
+            group_blocks.append(groups.astype(int))
+
+        results[model_name] = {
+            "y_true": np.concatenate(y_true_blocks, axis=0),
+            "y_score": np.concatenate(y_score_blocks, axis=0),
+            "group": np.concatenate(group_blocks, axis=0),
+        }
+
+    return results
 
 
 # ════════════════════════════════════════════════════════════════
@@ -792,10 +859,10 @@ def print_summary_table(all_results):
 # ════════════════════════════════════════════════════════════════
 def parse_args():
     p = argparse.ArgumentParser(description="Bias-in-Bios quantization comparison")
-    p.add_argument("--data-dir",     default="/ssd_scratch/sai.teja/INLP_Project/data/bias_in_bios")
-    p.add_argument("--model-path",   default="/ssd_scratch/sai.teja/INLP_Project/models/bios/best_bios_fp32.pt")
-    p.add_argument("--results-dir",  default="/ssd_scratch/sai.teja/INLP_Project/results/bios")
-    p.add_argument("--cache-dir",    default="/ssd_scratch/sai.teja/INLP_Project/cache/bios")
+    p.add_argument("--data-dir",     default="data/bias_in_bios")
+    p.add_argument("--model-path",   default="models/bios/best_bios_fp32.pt")
+    p.add_argument("--results-dir",  default="results/bios")
+    p.add_argument("--cache-dir",    default="cache/bios")
     p.add_argument("--batch-size",   type=int,   default=64)  # Reduced from 128
     p.add_argument("--max-length",   type=int,   default=128)
     p.add_argument("--num-workers",  type=int,   default=4)  # Reduced from 8
@@ -860,6 +927,9 @@ def main():
     test_loader = DataLoader(test_ds, batch_size=args.batch_size,
                              shuffle=False, num_workers=args.num_workers,
                              pin_memory=True)
+    phase23_loader = DataLoader(test_ds, batch_size=args.batch_size,
+                                shuffle=False, num_workers=args.num_workers,
+                                pin_memory=False)
 
     # Load FP32 model
     print(f"\n══════ LOADING MODEL ══════\n  {args.model_path}")
@@ -969,7 +1039,7 @@ def main():
                             pin_memory=False)
 
     if quantization_meta["int8_backend"] == "onnxruntime_static" and int8_onnx_path is not None:
-        acc, f1, preds, labels, genders = evaluate_onnx_int8(
+        acc, f1, preds, int8_probs, labels, genders = evaluate_onnx_int8(
             model=fp32_model,
             onnx_int8_path=int8_onnx_path,
             loader=cpu_loader,
@@ -986,6 +1056,12 @@ def main():
     else:
         all_results["int8"] = full_eval(int8_model, cpu_loader,
                                         torch.device("cpu"), "INT8", num_classes)
+        int8_probs, _, _ = collect_multiclass_probabilities(
+            int8_model,
+            phase23_loader,
+            torch.device("cpu"),
+            desc="INT8 probs",
+        )
 
     # Representation analysis
     print("\n══════ REPRESENTATION ANALYSIS ══════")
@@ -1009,6 +1085,88 @@ def main():
     all_results["cka_fp16"] = cka_fp16
     all_results["cka_int8"] = cka_int8
     all_results["quantization_meta"] = quantization_meta
+
+    # Phase 2/3 for Bias-in-Bios (multiclass one-vs-rest pooling).
+    print("\n══════ PHASE 2/3 (ROC + FROC) ══════")
+    fp32_probs, phase23_labels, phase23_groups = collect_multiclass_probabilities(
+        fp32_model,
+        phase23_loader,
+        device,
+        desc="FP32 probs",
+    )
+    fp16_phase23_model = quantize_fp16(fp32_model).to(device)
+    fp16_probs, _, _ = collect_multiclass_probabilities(
+        fp16_phase23_model,
+        phase23_loader,
+        device,
+        desc="FP16 probs",
+    )
+    del fp16_phase23_model
+
+    phase23_results = build_ovr_results_for_phase23(
+        model_scores={
+            "fp32": fp32_probs,
+            "fp16": fp16_probs,
+            "int8": int8_probs,
+        },
+        labels=phase23_labels,
+        groups=phase23_groups,
+    )
+    phase23_output_dir = os.path.join(args.results_dir, "phase23")
+
+    metrics_before_after, thresholds_per_model = froc_pipeline(phase23_results)
+    roc_gap_before, roc_gap_after = roc_analysis_pipeline(phase23_results, thresholds_per_model)
+    artifacts = save_phase23_artifacts(
+        metrics_before_after,
+        roc_gap_before,
+        roc_gap_after,
+        thresholds_per_model,
+        phase23_output_dir,
+    )
+    plot_fairness_comparison(
+        metrics_before_after,
+        save_path=os.path.join(phase23_output_dir, "bios_fairness_before_after.png"),
+    )
+    plot_roc_gap(
+        roc_gap_before,
+        roc_gap_after,
+        save_path=os.path.join(phase23_output_dir, "bios_roc_gap.png"),
+    )
+    for model_name, model_payload in phase23_results.items():
+        plot_roc_curves(
+            model_payload["y_true"],
+            model_payload["y_score"],
+            model_payload["group"],
+            title=f"ROC Curves by Group - {model_name} (Bias-in-Bios OVR)",
+            save_path=os.path.join(phase23_output_dir, f"bios_roc_curves_{model_name}.png"),
+        )
+        plot_roc_curves_before_after(
+            model_payload["y_true"],
+            model_payload["y_score"],
+            model_payload["group"],
+            thresholds_per_model[model_name]["thresholds"],
+            title=f"ROC Curves Before/After FROC - {model_name} (Bias-in-Bios OVR)",
+            save_path=os.path.join(phase23_output_dir, f"bios_roc_curves_before_after_{model_name}.png"),
+        )
+
+    bios_quant_meta = dict(quantization_meta)
+    bios_quant_meta["phase23_group_definition"] = "gender (female=0, male=1)"
+    bios_quant_meta["phase23_task_definition"] = "multiclass occupations pooled as one-vs-rest binary tasks"
+    verification_report_path = os.path.join(phase23_output_dir, "phase23_verification_report.md")
+    write_phase23_verification_report(
+        metrics_before_after,
+        roc_gap_before,
+        roc_gap_after,
+        thresholds_per_model,
+        verification_report_path,
+        base_metrics={k: all_results[k] for k in ["fp32", "fp16", "int8"] if k in all_results},
+        quantization_meta=bios_quant_meta,
+    )
+    print("  Phase 2/3 outputs:")
+    print(f"    metrics_before_after → {artifacts['metrics_path']}")
+    print(f"    roc_gap             → {artifacts['roc_gap_path']}")
+    print(f"    thresholds          → {artifacts['thresholds_path']}")
+    print(f"    verification_report → {verification_report_path}")
 
     print(f"\n{'Layer':<6} {'FP16 CKA':>10} {'INT8 CKA':>10} "
           f"{'FP16 L2':>10} {'INT8 L2':>10}")

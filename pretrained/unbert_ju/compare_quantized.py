@@ -32,6 +32,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from pretrained.unbert_ju.phase23_pipeline import run_phase23_pipeline
+
 warnings.filterwarnings("ignore")
 
 # ── Reproducibility ──
@@ -593,7 +595,7 @@ def main():
 
     # Evaluate FP32 baseline
     print("\n[Eval] Collecting FP32 predictions and hidden states …")
-    fp32_preds, _, _ = run_inference(fp32_model, val_df, tokenizer, precision="fp32")
+    fp32_preds, fp32_probs, _ = run_inference(fp32_model, val_df, tokenizer, precision="fp32")
     _, _, fp32_hidden = run_inference(
         fp32_model, repr_df, tokenizer, precision="fp32", collect_hidden=True
     )
@@ -624,7 +626,7 @@ def main():
         int8_model, quantization_meta = apply_int8_quantization(fp32_model, mode="dynamic")
 
     print("\n[Eval] INT8 predictions and hidden states …")
-    int8_preds, _, _ = run_inference(
+    int8_preds, int8_probs, _ = run_inference(
         int8_model, val_df, tokenizer, precision="int8"
     )
     _, _, int8_hidden_repr = run_inference(
@@ -641,7 +643,7 @@ def main():
     if torch.cuda.is_available():
         fp16_model = apply_fp16_model(fp32_model)
         print("\n[Eval] FP16 predictions and hidden states …")
-        fp16_preds, _, _ = run_inference(
+        fp16_preds, fp16_probs, _ = run_inference(
             fp16_model, val_df, tokenizer, precision="fp16"
         )
         _, _, fp16_hidden_repr = run_inference(
@@ -681,6 +683,31 @@ def main():
         quantization_meta,
         save_path=os.path.join(OUTPUT_DIR, "quantization_results.json"),
     )
+
+    # Phase 2/3 post-processing: group-aware thresholds and ROC distortion analysis.
+    model_scores = {
+        "fp32": fp32_probs,
+        "int8": int8_probs,
+    }
+    if torch.cuda.is_available():
+        model_scores["fp16"] = fp16_probs
+    else:
+        model_scores["fp16"] = fp32_probs
+
+    phase23_report = run_phase23_pipeline(
+        val_df=val_df,
+        model_scores=model_scores,
+        output_dir=OUTPUT_DIR,
+        plot_prefix="jigsaw",
+        base_metrics=results_all,
+        quantization_meta=quantization_meta,
+    )
+    print("\n[Phase 2/3] Saved outputs:")
+    print(f"  metrics_before_after → {phase23_report['artifacts']['metrics_path']}")
+    print(f"  roc_gap             → {phase23_report['artifacts']['roc_gap_path']}")
+    print(f"  thresholds           → {phase23_report['artifacts']['thresholds_path']}")
+    print(f"  verification_report  → {phase23_report['verification_report_path']}")
+    print(f"  phase23_dir          → {phase23_report['phase23_dir']}")
 
     # Print summary
     print_summary_report(results_all, repr_metrics)

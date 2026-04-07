@@ -280,11 +280,13 @@
     ]
   },
   "quantization_meta": {
-    "int8_requested_mode": "static",
+    "int8_requested_mode": "dynamic",
     "int8_applied_mode": "dynamic",
-    "calibration_used": true,
-    "calibration_samples": 2048,
-    "calibration_batches": 32,
-    "fallback_reason": "TypeError: 'Proxy' object does not support item assignment"
+    "int8_backend": "torch_dynamic",
+    "calibration_used": false,
+    "calibration_samples": 0,
+    "calibration_batches": 0,
+    "calibration_strategy": null,
+    "fallback_reason": null
   }
 }

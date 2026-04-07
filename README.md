@@ -123,6 +123,30 @@ Primary outputs:
 - `outputs/dpd_heatmap.png`
 - `outputs/eod_heatmap.png`
 
+### 3) Phase 2/3 post-processing and ROC analysis
+
+The compare script also writes a separate post-processing bundle under:
+
+- `outputs/phase23/`
+
+Key artifacts:
+
+- `metrics_before_after.csv`
+- `roc_gap.csv`
+- `thresholds.json`
+- `phase23_verification_report.md`
+- `jigsaw_fairness_before_after.png`
+- `jigsaw_roc_gap.png`
+- `jigsaw_roc_curves_<model>.png`
+- `jigsaw_roc_curves_before_after_<model>.png`
+
+Interpretation rules:
+
+- `score_auc` is the original model-score AUC.
+- `policy_auc` is the post-FROC decision AUC.
+- `f1_macro` and `f1_binary` are both reported to avoid ambiguity.
+- Before/after Phase-1 consistency is checked in `phase23_verification_report.md`.
+
 ## Calibration behavior notes
 
 - Bias-in-Bios script supports static mode selection via CLI and records applied/fallback metadata.
