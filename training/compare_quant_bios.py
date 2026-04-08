@@ -47,6 +47,9 @@ from pretrained.unbert_ju.phase23_pipeline import (
     write_phase23_verification_report,
 )
 
+FROC_EPS = 0.02
+SCORE_CALIBRATION_METHOD = "isotonic"
+
 # ── path setup ───────────────────────────────────────────────────
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -596,6 +599,61 @@ def build_ovr_results_for_phase23(model_scores, labels, groups):
     return results
 
 
+def compute_per_class_froc_variance(model_scores, labels, groups, eps, calibration_method, seed, verbose=False):
+    """Measure per-class |EOD| variance reduction before/after FROC."""
+    labels = np.asarray(labels)
+    groups = np.asarray(groups)
+
+    summary = {}
+    for model_name, probs in model_scores.items():
+        if verbose:
+            print(f"  [Phase 2/3] Per-class variance: {model_name} …")
+        probs = np.asarray(probs)
+        n_classes = probs.shape[1]
+        rows = []
+
+        for class_id in range(n_classes):
+            if verbose:
+                print(f"    class {class_id + 1:02d}/{n_classes:02d}", end="\r", flush=True)
+            class_results = {
+                "class_task": {
+                    "y_true": (labels == class_id).astype(int),
+                    "y_score": probs[:, class_id].astype(float),
+                    "group": groups.astype(int),
+                }
+            }
+            class_metrics, _ = froc_pipeline(
+                class_results,
+                eps=eps,
+                calibration_method=calibration_method,
+                random_seed=seed + class_id,
+            )
+            before_eod = abs(float(class_metrics["class_task"]["before"].get("eod", np.nan)))
+            after_eod = abs(float(class_metrics["class_task"]["after"].get("eod", np.nan)))
+            rows.append(
+                {
+                    "class_id": int(class_id),
+                    "eod_abs_before": before_eod,
+                    "eod_abs_after": after_eod,
+                    "eod_abs_delta": after_eod - before_eod,
+                }
+            )
+
+        before_vals = np.array([row["eod_abs_before"] for row in rows], dtype=float)
+        after_vals = np.array([row["eod_abs_after"] for row in rows], dtype=float)
+        summary[model_name] = {
+            "mean_abs_eod_before": float(np.nanmean(before_vals)),
+            "mean_abs_eod_after": float(np.nanmean(after_vals)),
+            "var_abs_eod_before": float(np.nanvar(before_vals)),
+            "var_abs_eod_after": float(np.nanvar(after_vals)),
+            "rows": rows,
+        }
+        if verbose:
+            print(f"    done{' ' * 20}")
+
+    return summary
+
+
 # ════════════════════════════════════════════════════════════════
 # 5. FAIRNESS — Equal Opportunity Difference (EOD)
 # ════════════════════════════════════════════════════════════════
@@ -876,6 +934,15 @@ def parse_args():
     p.add_argument("--calib-batches", type=int, default=32,
                    help="Maximum calibration batches to run")
     p.add_argument("--seed",         type=int,   default=42)
+    p.add_argument("--froc-eps", type=float, default=FROC_EPS,
+                   help="Epsilon budget for L1-constrained Fair ROC transport")
+    p.add_argument("--froc-mode", choices=["strict", "pragmatic"], default="strict",
+                   help="FROC mode: strict Algorithm-1 or pragmatic deterministic matching")
+    p.add_argument("--score-calibration", choices=["none", "platt", "isotonic"],
+                   default=SCORE_CALIBRATION_METHOD,
+                   help="Post-quantization score calibration before FROC")
+    p.add_argument("--skip-per-class-variance", action="store_true",
+                   help="Skip the expensive per-class Phase 2/3 variance pass")
     p.add_argument("--sanity-check", action="store_true")
     return p.parse_args()
 
@@ -1112,9 +1179,15 @@ def main():
         labels=phase23_labels,
         groups=phase23_groups,
     )
-    phase23_output_dir = os.path.join(args.results_dir, "phase23")
+    phase23_output_dir = os.path.join(args.results_dir, f"phase23_{args.froc_mode}")
 
-    metrics_before_after, thresholds_per_model = froc_pipeline(phase23_results)
+    metrics_before_after, thresholds_per_model = froc_pipeline(
+        phase23_results,
+        eps=args.froc_eps,
+        calibration_method=args.score_calibration,
+        random_seed=args.seed,
+        froc_mode=args.froc_mode,
+    )
     roc_gap_before, roc_gap_after = roc_analysis_pipeline(phase23_results, thresholds_per_model)
     artifacts = save_phase23_artifacts(
         metrics_before_after,
@@ -1123,6 +1196,28 @@ def main():
         thresholds_per_model,
         phase23_output_dir,
     )
+
+    per_class_variance_path = None
+    if not args.skip_per_class_variance and not args.sanity_check:
+        print("  [Phase 2/3] Computing per-class variance diagnostics …")
+        per_class_variance = compute_per_class_froc_variance(
+            model_scores={
+                "fp32": fp32_probs,
+                "fp16": fp16_probs,
+                "int8": int8_probs,
+            },
+            labels=phase23_labels,
+            groups=phase23_groups,
+            eps=args.froc_eps,
+            calibration_method=args.score_calibration,
+            seed=args.seed,
+            verbose=True,
+        )
+        per_class_variance_path = os.path.join(phase23_output_dir, "per_class_froc_variance.json")
+        with open(per_class_variance_path, "w", encoding="utf-8") as handle:
+            json.dump(per_class_variance, handle, indent=2)
+    else:
+        print("  [Phase 2/3] Skipping per-class variance diagnostics for faster iteration.")
     plot_fairness_comparison(
         metrics_before_after,
         save_path=os.path.join(phase23_output_dir, "bios_fairness_before_after.png"),
@@ -1149,7 +1244,13 @@ def main():
             save_path=os.path.join(phase23_output_dir, f"bios_roc_curves_before_after_{model_name}.png"),
         )
 
-    bios_quant_meta = dict(quantization_meta)
+    bios_quant_meta = {
+        "requested_mode": quantization_meta.get("int8_requested_mode"),
+        "applied_mode": quantization_meta.get("int8_applied_mode"),
+        "fallback_reason": quantization_meta.get("fallback_reason"),
+        "calibration_method": args.score_calibration,
+        "froc_mode": args.froc_mode,
+    }
     bios_quant_meta["phase23_group_definition"] = "gender (female=0, male=1)"
     bios_quant_meta["phase23_task_definition"] = "multiclass occupations pooled as one-vs-rest binary tasks"
     verification_report_path = os.path.join(phase23_output_dir, "phase23_verification_report.md")
@@ -1166,6 +1267,10 @@ def main():
     print(f"    metrics_before_after → {artifacts['metrics_path']}")
     print(f"    roc_gap             → {artifacts['roc_gap_path']}")
     print(f"    thresholds          → {artifacts['thresholds_path']}")
+    print(f"    transport           → {artifacts['transport_path']}")
+    print(f"    threshold_invariance→ {artifacts['invariance_path']}")
+    if per_class_variance_path:
+        print(f"    per_class_variance  → {per_class_variance_path}")
     print(f"    verification_report → {verification_report_path}")
 
     print(f"\n{'Layer':<6} {'FP16 CKA':>10} {'INT8 CKA':>10} "

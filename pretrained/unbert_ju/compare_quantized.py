@@ -62,6 +62,9 @@ INT8_MODE        = "static"
 CALIB_SAMPLE     = 8192
 CALIB_BATCH_SIZE = 16
 CALIB_BATCHES    = 128
+FROC_EPS         = 0.02
+SCORE_CALIBRATION_METHOD = "isotonic"
+FROC_MODE = "strict"
 
 # ── Sensitive identity columns in Jigsaw ──
 IDENTITY_COLS = [
@@ -529,6 +532,8 @@ def save_results_json(results_all, repr_metrics, quantization_meta, save_path):
             "calib_sample": CALIB_SAMPLE,
             "calib_batch_size": CALIB_BATCH_SIZE,
             "calib_batches": CALIB_BATCHES,
+            "froc_eps": FROC_EPS,
+            "score_calibration_method": SCORE_CALIBRATION_METHOD,
             "repr_sample": REPR_SAMPLE,
             "seed": SEED,
         },
@@ -701,11 +706,18 @@ def main():
         plot_prefix="jigsaw",
         base_metrics=results_all,
         quantization_meta=quantization_meta,
+        froc_eps=FROC_EPS,
+        calibration_method=SCORE_CALIBRATION_METHOD,
+        random_seed=SEED,
+        froc_mode=FROC_MODE,
+        phase23_subdir=f"phase23_{FROC_MODE}",
     )
     print("\n[Phase 2/3] Saved outputs:")
     print(f"  metrics_before_after → {phase23_report['artifacts']['metrics_path']}")
     print(f"  roc_gap             → {phase23_report['artifacts']['roc_gap_path']}")
     print(f"  thresholds           → {phase23_report['artifacts']['thresholds_path']}")
+    print(f"  transport            → {phase23_report['artifacts']['transport_path']}")
+    print(f"  threshold_invariance → {phase23_report['artifacts']['invariance_path']}")
     print(f"  verification_report  → {phase23_report['verification_report_path']}")
     print(f"  phase23_dir          → {phase23_report['phase23_dir']}")
 
