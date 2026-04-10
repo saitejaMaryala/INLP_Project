@@ -917,7 +917,7 @@ def print_summary_table(all_results):
 # ════════════════════════════════════════════════════════════════
 def parse_args():
     p = argparse.ArgumentParser(description="Bias-in-Bios quantization comparison")
-    p.add_argument("--data-dir",     default="data/bias_in_bios")
+    p.add_argument("--data-dir",     default="data/jigsaw_bias_data")
     p.add_argument("--model-path",   default="models/bios/best_bios_fp32.pt")
     p.add_argument("--results-dir",  default="results/bios")
     p.add_argument("--cache-dir",    default="cache/bios")

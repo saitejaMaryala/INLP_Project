@@ -16,3 +16,4 @@ test_labels.csv
 *.pt
 *.csv
 outputs/
+onnx/

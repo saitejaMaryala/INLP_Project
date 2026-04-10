@@ -1,0 +1,170 @@
+{
+  "fp32": {
+    "transport": {
+      "target_by_group": {
+        "0": {
+          "target_tpr": 0.9278846342749802,
+          "target_fpr": 0.06060606060606061
+        },
+        "1": {
+          "target_tpr": 0.9278846342749802,
+          "target_fpr": 0.06060606060606061
+        }
+      },
+      "disadvantaged_group": 0,
+      "privileged_group": 1,
+      "operation_counts": {
+        "BoundaryCut": 0,
+        "CutShift": 0,
+        "Hypograph": 17,
+        "UpShift": 58,
+        "LeftShift": 23
+      },
+      "max_l1_after": 0.019999999999999907,
+      "eps": 0.02,
+      "auc_by_group": {
+        "0": 0.9826231676789978,
+        "1": 0.9831507130066028
+      }
+    },
+    "calibration": {
+      "method": "isotonic",
+      "applied": true,
+      "reason": null
+    },
+    "policies": {
+      "0": {
+        "threshold_a": 0.03499038319277999,
+        "threshold_b": 0.03794739111686071,
+        "prob_a": 0.5825104639225258
+      },
+      "1": {
+        "threshold_a": 0.03794739111686071,
+        "threshold_b": 0.0379746835443038,
+        "prob_a": 0.8917908878891421
+      }
+    },
+    "target_by_group": {
+      "0": {
+        "target_tpr": 0.9278846342749802,
+        "target_fpr": 0.06060606060606061
+      },
+      "1": {
+        "target_tpr": 0.9278846342749802,
+        "target_fpr": 0.06060606060606061
+      }
+    }
+  },
+  "fp16": {
+    "transport": {
+      "target_by_group": {
+        "0": {
+          "target_tpr": 0.9277932627124991,
+          "target_fpr": 0.06060606060606061
+        },
+        "1": {
+          "target_tpr": 0.9277932627124991,
+          "target_fpr": 0.06060606060606061
+        }
+      },
+      "disadvantaged_group": 0,
+      "privileged_group": 1,
+      "operation_counts": {
+        "BoundaryCut": 0,
+        "CutShift": 0,
+        "Hypograph": 18,
+        "UpShift": 55,
+        "LeftShift": 25
+      },
+      "max_l1_after": 0.020000000000000018,
+      "eps": 0.02,
+      "auc_by_group": {
+        "0": 0.9826244143232542,
+        "1": 0.9831438934139505
+      }
+    },
+    "calibration": {
+      "method": "isotonic",
+      "applied": true,
+      "reason": null
+    },
+    "policies": {
+      "0": {
+        "threshold_a": 0.035021888680425266,
+        "threshold_b": 0.03590192644483362,
+        "prob_a": 0.6136819948595433
+      },
+      "1": {
+        "threshold_a": 0.035021888680425266,
+        "threshold_b": 0.03590192644483362,
+        "prob_a": 0.6038560032648529
+      }
+    },
+    "target_by_group": {
+      "0": {
+        "target_tpr": 0.9277932627124991,
+        "target_fpr": 0.06060606060606061
+      },
+      "1": {
+        "target_tpr": 0.9277932627124991,
+        "target_fpr": 0.06060606060606061
+      }
+    }
+  },
+  "int8": {
+    "transport": {
+      "target_by_group": {
+        "1": {
+          "target_tpr": 0.8809010264765799,
+          "target_fpr": 0.10101010101010102
+        },
+        "0": {
+          "target_tpr": 0.8862106925594331,
+          "target_fpr": 0.10101010101010102
+        }
+      },
+      "disadvantaged_group": 1,
+      "privileged_group": 0,
+      "operation_counts": {
+        "BoundaryCut": 0,
+        "CutShift": 0,
+        "Hypograph": 76,
+        "UpShift": 8,
+        "LeftShift": 14
+      },
+      "max_l1_after": 0.019999999999999997,
+      "eps": 0.02,
+      "auc_by_group": {
+        "0": 0.9581725202657414,
+        "1": 0.9574630173968351
+      }
+    },
+    "calibration": {
+      "method": "isotonic",
+      "applied": true,
+      "reason": null
+    },
+    "policies": {
+      "0": {
+        "threshold_a": 0.03803463075329288,
+        "threshold_b": 0.03898635477582846,
+        "prob_a": 0.9826579872207806
+      },
+      "1": {
+        "threshold_a": 0.03803463075329288,
+        "threshold_b": 0.03898635477582846,
+        "prob_a": 0.9179755516487755
+      }
+    },
+    "target_by_group": {
+      "1": {
+        "target_tpr": 0.8809010264765799,
+        "target_fpr": 0.10101010101010102
+      },
+      "0": {
+        "target_tpr": 0.8862106925594331,
+        "target_fpr": 0.10101010101010102
+      }
+    }
+  }
+}
